@@ -1,63 +1,94 @@
-package ru.netology.nmedia.viewmodel
+package ru.netology.nmedia.viewModel
 
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.MutableLiveData
-import ru.netology.nmedia.dto.Post
+import ru.netology.nmedia.db.AppDb
+import ru.netology.nmedia.objects.Post
 import ru.netology.nmedia.repository.PostRepository
-import ru.netology.nmedia.adapter.PostInteractionListener
-import ru.netology.nmedia.repository.FilePostRepository
-import ru.netology.nmedia.util.SingleLiveEvent
+import ru.netology.nmedia.repository.SQLiteRepository
+import ru.netology.nmedia.utils.SingleEvent
 
 class PostViewModel(
     application: Application
 ) : AndroidViewModel(application), PostInteractionListener {
-    private val repository: PostRepository = FilePostRepository(application)
 
+    private val repository: PostRepository = SQLiteRepository(
+        dao = AppDb.getInstance(
+            context = application
+        ).postDao,
+        context = application
+    )
     val data by repository::data
 
-    val sharePostContent = SingleLiveEvent<String>()
-    val navigateToPostContentScreenEvent = SingleLiveEvent<Unit>()
-    val playVideoURL = SingleLiveEvent<String>()
+    var postDraft by repository::postDraft
+        private set
 
-    val currentPost = MutableLiveData<Post?>(null)
+    val navigateToPostContentActivityEvent = MutableLiveData<SingleEvent<Post>>()
 
-    fun onButtonSaveClicked(content: String) {
-        if (content.isBlank()) return
+    val navigateToPostFragmentEvent = MutableLiveData<SingleEvent<Long>>()
 
-        val post = currentPost.value?.copy(
-            content = content
-        ) ?: Post(
-            id = 0L,
-            author = "Me",
-            content = content,
-            published = "today",
-        )
-        repository.save(post)
-        currentPost.value = null
+    val sharePostContentEvent = MutableLiveData<SingleEvent<String>>()
+
+    val videoPlayEvent = MutableLiveData<SingleEvent<String>>()
+
+    val postFragmentRemoveEvent = MutableLiveData<SingleEvent<Long>>()
+    val postFragmentEditEvent = MutableLiveData<SingleEvent<Post>>()
+    val postFragmentShareEvent = MutableLiveData<SingleEvent<String>>()
+
+
+    val scrollOnNewPostEvent = MutableLiveData<SingleEvent<Unit>>()
+
+    fun setDraft(draft: String?) {
+        postDraft = draft
     }
 
-    override fun onButtonPlayVideoClicked(post: Post) {
-        playVideoURL.value = post.videoURL
+    fun scrollOnTop() {
+        scrollOnNewPostEvent.value = SingleEvent()
     }
 
-    override fun onButtonLikesClicked(post: Post) =
-        repository.like(post.id)
-
-    override fun onButtonRepostsClicked(post: Post) {
-        sharePostContent.value = post.content
+    fun savePost(newOrEditedPost: Post) {
+        repository.save(newOrEditedPost)
     }
 
-    override fun onButtonRemoveClicked(post: Post) =
-        repository.remove(post.id)
-
-    override fun onButtonEditClicked(post: Post) {
-        currentPost.value = post
-        navigateToPostContentScreenEvent.call()
+    fun onAddButtonClick() {
+        navigateToPostContentActivityEvent.value = SingleEvent(Post())
     }
 
-    fun onAddClicked() {
-        navigateToPostContentScreenEvent.call()
+    fun onPostFragmentRemove(postID: Long) {
+        postFragmentRemoveEvent.value = SingleEvent(postID)
     }
 
+    fun onPostFragmentEdit(post: Post) {
+        postFragmentEditEvent.value = SingleEvent(post)
+    }
+
+    fun onPostFragmentShare(post: Post) {
+        postFragmentShareEvent.value = SingleEvent(post.toString())
+        repository.share(post)
+    }
+
+    // region PostInteractionListener
+
+    override fun onLikeClick(postID: Long) = repository.like(postID)
+    override fun onShareClick(post: Post) {
+        sharePostContentEvent.value = SingleEvent(post.toString())
+        repository.share(post)
+    }
+
+    override fun onRemoveClick(postID: Long) = repository.remove(postID)
+    override fun onEditClick(post: Post) {
+        navigateToPostContentActivityEvent.value = SingleEvent(post)
+    }
+
+    override fun onVideoLinkClick(link: String) {
+        videoPlayEvent.value = SingleEvent(link)
+    }
+
+    override fun onPostNavigateAreaClick(postID: Long) {
+        navigateToPostFragmentEvent.value = SingleEvent(postID)
+    }
+
+
+    // endregion PostInteractionListener
 }

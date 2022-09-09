@@ -4,68 +4,55 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.view.LayoutInflater
-import android.view.View
 import android.view.ViewGroup
 import androidx.fragment.app.Fragment
-import androidx.fragment.app.clearFragmentResultListener
-import androidx.fragment.app.setFragmentResultListener
 import androidx.fragment.app.viewModels
 import androidx.navigation.fragment.findNavController
-import ru.netology.nmedia.R
-import ru.netology.nmedia.adapter.PostsAdapter
-import ru.netology.nmedia.databinding.FeedFragmentBinding
-import ru.netology.nmedia.viewModel.FeedFragmentViewModel
+import ru.netology.nmedia.adapter.PostsFeedAdapter
+import ru.netology.nmedia.databinding.FragmentFeedBinding
+import ru.netology.nmedia.utils.sharePostWithIntent
+import ru.netology.nmedia.viewModel.PostViewModel
 
 class FeedFragment : Fragment() {
-
-    private val viewModel by viewModels<FeedFragmentViewModel>()
+    private val viewModel: PostViewModel by viewModels(
+        ownerProducer = ::requireParentFragment
+    )
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        viewModel.sharePostContent.observe(this) { postContent ->
-            val intent = Intent().apply {
-                action = Intent.ACTION_SEND
-                putExtra(Intent.EXTRA_TEXT, postContent)
-                type = "text/plain"
+        viewModel.sharePostContentEvent.observe(this) {
+            it.getContentIfNotHandled()
+                ?.let { postContent ->
+                    sharePostWithIntent(postContent)
+                }
+        }
+
+        viewModel.navigateToPostContentActivityEvent.observe(this) {
+            it.getContentIfNotHandled()?.let { emptyOrExistingPost ->
+                val direction =
+                    FeedFragmentDirections.feedFragmentToPostContentFragment(emptyOrExistingPost)
+                findNavController().navigate(direction)
             }
-
-            val shareIntent = Intent.createChooser(
-                intent, getString(R.string.chooser_share_post)
-            )
-            startActivity(shareIntent)
         }
 
-        setFragmentResultListener(
-            requestKey = PostContentFragment.REQUEST_KEY_FEED_FRAGMENT
-        ) { requestKey, bundle ->
-            if (requestKey != PostContentFragment.REQUEST_KEY_FEED_FRAGMENT) return@setFragmentResultListener
-            val postContent = bundle.getString(
-                PostContentFragment.CONTENT_KEY
-            ) ?: return@setFragmentResultListener
-            val postUrl = bundle.getString(
-                PostContentFragment.URL_KEY
-            )
-            viewModel.onSaveButtonClicked(postContent, postUrl)
+        viewModel.navigateToPostFragmentEvent.observe(this) {
+            it.getContentIfNotHandled()?.let { postID ->
+                val direction = FeedFragmentDirections.feedFragmentToPostFragment(postID)
+                findNavController().navigate(direction)
+            }
         }
 
-        viewModel.navigateToPostContentScreen.observe(this) { post ->
-            val direction = FeedFragmentDirections
-                .toPostContentFragment(post?.content, post?.url, "requestKeyFeedFragment")
-            findNavController().navigate(direction)
+        viewModel.videoPlayEvent.observe(this) {
+            it.getContentIfNotHandled()?.let { url ->
+                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+            }
         }
 
-        viewModel.navigateToPostScreen.observe(this) { post ->
-            val direction = FeedFragmentDirections.toPostFragment(post)
-            findNavController().navigate(direction)
-        }
-
-        viewModel.uri.observe(this) { url ->
-            val intent = Intent(
-                Intent.ACTION_VIEW,
-                Uri.parse(url)
-            )
-            startActivity(intent)
+        viewModel.postFragmentRemoveEvent.observe(this) {
+            it.getContentIfNotHandled()?.let { postID ->
+                viewModel.onRemoveClick(postID)
+            }
         }
     }
 
@@ -73,16 +60,24 @@ class FeedFragment : Fragment() {
         inflater: LayoutInflater,
         container: ViewGroup?,
         savedInstanceState: Bundle?
-    ) = FeedFragmentBinding.inflate(
-        layoutInflater, container, false
-    ).also { binding ->
-        val adapter = PostsAdapter(viewModel)
-        binding.postsRecyclerView.adapter = adapter
-        viewModel.data.observe(viewLifecycleOwner) { posts ->
-            adapter.submitList(posts)
-        }
-        binding.fab.setOnClickListener {
-            viewModel.onAddClicked()
-        }
-    }.root
+    ) = FragmentFeedBinding.inflate(layoutInflater, container, false)
+        .also { binding ->
+            val adapter = PostsFeedAdapter(viewModel)
+
+            binding.recyclerView.adapter = adapter
+
+            viewModel.data.observe(viewLifecycleOwner) { posts ->
+                adapter.submitList(posts)
+            }
+
+            binding.fab.setOnClickListener {
+                viewModel.onAddButtonClick()
+            }
+
+            viewModel.scrollOnNewPostEvent.observe(viewLifecycleOwner) {
+                it.runIfNotHandled {
+                    binding.recyclerView.run { scrollToPosition(top) }
+                }
+            }
+        }.root
 }
